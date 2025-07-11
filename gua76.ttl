@@ -28,35 +28,47 @@
     # Porte di Controllo del Plugin
     # ------------------------------------
 
-    # Input Gain
+    # Input Gain (Regolabile da -20 a +20 dB, Default 0 dB)
     lv2:port [
         a lv2:InputPort ,
             lv2:ControlPort ;
         lv2:index 0 ;
         lv2:symbol "input_gain" ;
         lv2:name "Input Gain" ;
-        lv2:default 0.7 ; # Valore di default
-        lv2:minimum 0.0 ;
-        lv2:maximum 2.0 ;
-        units:unit units:db ; # O units:factor; a seconda dell'implementazione interna
+        lv2:default 0.0 ; # Default 0 dB
+        lv2:minimum -20.0 ;
+        lv2:maximum 20.0 ;
+        units:unit units:db ; # Unità in Decibel
         rdfs:comment "Controls the input level to the compressor, influencing drive." ;
     ] , [
-        # Output Gain
+        # Output Gain (Regolabile da -20 a +20 dB, Default 0 dB)
         a lv2:InputPort ,
             lv2:ControlPort ;
         lv2:index 1 ;
         lv2:symbol "output_gain" ;
         lv2:name "Output Gain" ;
-        lv2:default 0.7 ; # Valore di default
-        lv2:minimum 0.0 ;
-        lv2:maximum 2.0 ;
-        units:unit units:db ;
+        lv2:default 0.0 ; # Default 0 dB
+        lv2:minimum -20.0 ;
+        lv2:maximum 20.0 ;
+        units:unit units:db ; # Unità in Decibel
         rdfs:comment "Controls the output level after compression and output clipping." ;
+    ] , [
+        # Input -10dB Pad (Interruttore ON/OFF)
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 2 ; # Nuovo indice
+        lv2:symbol "input_pad_10db" ;
+        lv2:name "Input -10dB Pad" ;
+        lv2:default 0.0 ; # Default OFF
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ; # 0.0 per OFF, 1.0 per ON
+        lv2:portProperty lv2:toggled ; # Indica che è un interruttore
+        rdfs:comment "Applies a -10dB attenuation pad at the input stage." ;
     ] , [
         # Attack
         a lv2:InputPort ,
             lv2:ControlPort ;
-        lv2:index 2 ;
+        lv2:index 3 ; # Indice spostato
         lv2:symbol "attack" ;
         lv2:name "Attack" ;
         lv2:default 0.000020 ; # 20 microsecondi
@@ -68,7 +80,7 @@
         # Release
         a lv2:InputPort ,
             lv2:ControlPort ;
-        lv2:index 3 ;
+        lv2:index 4 ; # Indice spostato
         lv2:symbol "release" ;
         lv2:name "Release" ;
         lv2:default 0.2 ; # 200 millisecondi
@@ -80,19 +92,18 @@
         # Ratio
         a lv2:InputPort ,
             lv2:ControlPort ;
-        lv2:index 4 ;
+        lv2:index 5 ; # Indice spostato
         lv2:symbol "ratio" ;
         lv2:name "Ratio" ;
         lv2:default 4.0 ;
         lv2:minimum 4.0 ;
         lv2:maximum 25.0 ; # 25.0 sarà il valore per All-Button
-        # Per la GUI puoi mappare 4.0, 8.0, 12.0, 20.0 e 25.0 a pulsanti/opzioni.
         rdfs:comment "Compression ratio: 4:1, 8:1, 12:1, 20:1, or All-Button mode (25.0)." ;
     ] , [
         # Input Clip Drive (per la simulazione del trasformatore di input)
         a lv2:InputPort ,
             lv2:ControlPort ;
-        lv2:index 5 ;
+        lv2:index 6 ; # Indice spostato
         lv2:symbol "input_clip_drive" ;
         lv2:name "Input Clip Drive" ;
         lv2:default 1.0 ;
@@ -103,7 +114,7 @@
         # Output Clip Drive (per la simulazione del trasformatore di output)
         a lv2:InputPort ,
             lv2:ControlPort ;
-        lv2:index 6 ;
+        lv2:index 7 ; # Indice spostato
         lv2:symbol "output_clip_drive" ;
         lv2:name "Output Clip Drive" ;
         lv2:default 1.0 ;
@@ -114,7 +125,7 @@
         # Frequenza HPF Sidechain
         a lv2:InputPort ,
             lv2:ControlPort ;
-        lv2:index 7 ;
+        lv2:index 8 ; # Indice spostato
         lv2:symbol "sc_hpf_freq" ;
         lv2:name "SC HPF Freq" ;
         lv2:default 20.0 ;
@@ -126,9 +137,62 @@
         # Frequenza LPF Sidechain
         a lv2:InputPort ,
             lv2:ControlPort ;
-        lv2:index 8 ;
+        lv2:index 9 ; # Indice spostato
         lv2:symbol "sc_lpf_freq" ;
         lv2:name "SC LPF Freq" ;
         lv2:default 20000.0 ;
         lv2:minimum 20.0 ;
-        lv2:maximum
+        lv2:maximum 20000.0 ;
+        units:unit units:hz ;
+        rdfs:comment "Low-pass filter frequency for the sidechain signal." ;
+    ] , [
+        # ------------------------------------
+        # Porte Audio Stereo (gli indici sono tutti spostati di 1 ora!)
+        # ------------------------------------
+
+        # Audio Input Left (main)
+        a lv2:InputPort ,
+            lv2:AudioPort ;
+        lv2:index 10 ; # Nuovo indice
+        lv2:symbol "audio_in_L" ;
+        lv2:name "Audio In L" ;
+    ] , [
+        # Audio Input Right (main)
+        a lv2:InputPort ,
+            lv2:AudioPort ;
+        lv2:index 11 ; # Nuovo indice
+        lv2:symbol "audio_in_R" ;
+        lv2:name "Audio In R" ;
+    ] , [
+        # Audio Output Left (main)
+        a lv2:OutputPort ,
+            lv2:AudioPort ;
+        lv2:index 12 ; # Nuovo indice
+        lv2:symbol "audio_out_L" ;
+        lv2:name "Audio Out L" ;
+    ] , [
+        # Audio Output Right (main)
+        a lv2:OutputPort ,
+            lv2:AudioPort ;
+        lv2:index 13 ; # Nuovo indice
+        lv2:symbol "audio_out_R" ;
+        lv2:name "Audio Out R" ;
+    ] , [
+        # Audio Input Sidechain Left (external)
+        a lv2:InputPort ,
+            lv2:AudioPort ;
+        lv2:index 14 ; # Nuovo indice
+        lv2:symbol "audio_sidechain_in_L" ;
+        lv2:name "Sidechain Input L" ;
+        pprops:notOnGUI true ; # Questa porta non appare tipicamente nella GUI del plugin
+        rdfs:comment "Optional external Left audio input for sidechain compression." ;
+    ] , [
+        # Audio Input Sidechain Right (external)
+        a lv2:InputPort ,
+            lv2:AudioPort ;
+        lv2:index 15 ; # Nuovo indice
+        lv2:symbol "audio_sidechain_in_R" ;
+        lv2:name "Sidechain Input R" ;
+        pprops:notOnGUI true ; # Questa porta non appare tipicamente nella GUI del plugin
+        rdfs:comment "Optional external Right audio input for sidechain compression." ;
+    ] .
