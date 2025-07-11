@@ -1,0 +1,134 @@
+@prefix doap:  <http://usefulinc.com/ns/doap#> .
+@prefix lv2:   <http://lv2plug.in/ns/lv2core#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix units: <http://lv2plug.in/ns/extensions/units#> .
+@prefix pprops: <http://lv2plug.in/ns/ext/port-props#> .
+@prefix ui:    <http://lv2plug.in/ns/extensions/ui#> .
+@prefix foaf:  <http://xmlns.com/foaf/0.1/> .
+
+# URI del Plugin (DEVE CORRISPONDERE ESATTAMENTE A QUELLO IN gua76.cpp)
+<http://moddevices.com/plugins/mod-devel/gua76>
+    a lv2:Plugin ;
+    lv2:optionalFeature lv2:hardRTCapable ;
+    lv2:requiredFeature lv2:isControllable ;
+    doap:name "gua76 Compressor" ; # Nome visualizzato nella DAW
+    doap:developer [
+        rdfs:label "Your Name" ; # <--- Inserisci il tuo nome qui
+        foaf:mbox <mailto:your.email@example.com> ; # <--- Inserisci la tua email qui
+    ] ;
+    doap:maintainer [
+        rdfs:label "Your Name" ; # <--- Inserisci il tuo nome qui
+        foaf:mbox <mailto:your.email@example.com> ; # <--- Inserisci la tua email qui
+    ] ;
+
+    # URI della GUI (DEVE CORRISPONDERE A QUELLO IN gui/gua76_gui.cpp)
+    ui:ui <http://moddevices.com/plugins/mod-devel/gua76_ui> ;
+
+    # ------------------------------------
+    # Porte di Controllo del Plugin
+    # ------------------------------------
+
+    # Input Gain
+    lv2:port [
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 0 ;
+        lv2:symbol "input_gain" ;
+        lv2:name "Input Gain" ;
+        lv2:default 0.7 ; # Valore di default
+        lv2:minimum 0.0 ;
+        lv2:maximum 2.0 ;
+        units:unit units:db ; # O units:factor; a seconda dell'implementazione interna
+        rdfs:comment "Controls the input level to the compressor, influencing drive." ;
+    ] , [
+        # Output Gain
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 1 ;
+        lv2:symbol "output_gain" ;
+        lv2:name "Output Gain" ;
+        lv2:default 0.7 ; # Valore di default
+        lv2:minimum 0.0 ;
+        lv2:maximum 2.0 ;
+        units:unit units:db ;
+        rdfs:comment "Controls the output level after compression and output clipping." ;
+    ] , [
+        # Attack
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 2 ;
+        lv2:symbol "attack" ;
+        lv2:name "Attack" ;
+        lv2:default 0.000020 ; # 20 microsecondi
+        lv2:minimum 0.000020 ; # ~20us (minimo dell'1176)
+        lv2:maximum 0.000800 ; # ~800us (massimo dell'1176)
+        units:unit units:s ; # Usiamo secondi, è più standard per LV2
+        rdfs:comment "Attack time of the compressor, from ultra-fast to fast." ;
+    ] , [
+        # Release
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 3 ;
+        lv2:symbol "release" ;
+        lv2:name "Release" ;
+        lv2:default 0.2 ; # 200 millisecondi
+        lv2:minimum 0.05 ; # ~50ms (minimo dell'1176)
+        lv2:maximum 1.1 ; # ~1.1s (massimo dell'1176)
+        units:unit units:s ; # Usiamo secondi
+        rdfs:comment "Release time of the compressor, from fast to slow." ;
+    ] , [
+        # Ratio
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "ratio" ;
+        lv2:name "Ratio" ;
+        lv2:default 4.0 ;
+        lv2:minimum 4.0 ;
+        lv2:maximum 25.0 ; # 25.0 sarà il valore per All-Button
+        # Per la GUI puoi mappare 4.0, 8.0, 12.0, 20.0 e 25.0 a pulsanti/opzioni.
+        rdfs:comment "Compression ratio: 4:1, 8:1, 12:1, 20:1, or All-Button mode (25.0)." ;
+    ] , [
+        # Input Clip Drive (per la simulazione del trasformatore di input)
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 5 ;
+        lv2:symbol "input_clip_drive" ;
+        lv2:name "Input Clip Drive" ;
+        lv2:default 1.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 10.0 ; # Un range più ampio per la saturazione
+        rdfs:comment "Intensity of soft clipping at the input stage, simulating transformer saturation." ;
+    ] , [
+        # Output Clip Drive (per la simulazione del trasformatore di output)
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 6 ;
+        lv2:symbol "output_clip_drive" ;
+        lv2:name "Output Clip Drive" ;
+        lv2:default 1.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 10.0 ; # Un range più ampio per la saturazione
+        rdfs:comment "Intensity of soft clipping at the output stage, simulating transformer saturation." ;
+    ] , [
+        # Frequenza HPF Sidechain
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 7 ;
+        lv2:symbol "sc_hpf_freq" ;
+        lv2:name "SC HPF Freq" ;
+        lv2:default 20.0 ;
+        lv2:minimum 20.0 ;
+        lv2:maximum 20000.0 ;
+        units:unit units:hz ;
+        rdfs:comment "High-pass filter frequency for the sidechain signal." ;
+    ] , [
+        # Frequenza LPF Sidechain
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 8 ;
+        lv2:symbol "sc_lpf_freq" ;
+        lv2:name "SC LPF Freq" ;
+        lv2:default 20000.0 ;
+        lv2:minimum 20.0 ;
+        lv2:maximum
