@@ -1,113 +1,100 @@
-# --- General Project Settings ---
-# Plugin Bundle Name (matches folder name)
-BUNDLE_NAME := gua76.lv2
+# Makefile per il plugin LV2 Gua76 Compressor
 
-# URI for the core plugin (MUST match gua76.cpp and gua76.ttl)
-LV2_URI := http://moddevices.com/plugins/mod-devel/gua76
+# Nome del plugin e della directory del bundle LV2
+BUNDLE_NAME = gua76.lv2
+PLUGIN_URI = http://your-plugin.com/plugins/gua76 # Assicurati che questo corrisponda a gua76.h e manifest.ttl
 
-# URI for the GUI (MUST match gua76_gui.cpp and gua76.ttl)
-LV2_GUI_URI := http://moddevices.com/plugins/mod-devel/gua76_ui
+# Directory di destinazione per l'installazione
+# Per gli utenti: ~/.lv2
+# Per il sistema: /usr/local/lib/lv2 o /usr/lib/lv2
+# Puoi cambiare questa variabile o sovrascriverla da riga di comando (es. make install LV2_PATH=/usr/local/lib/lv2)
+LV2_PATH ?= $(HOME)/.lv2
 
-# Compiler (GCC/G++)
+# Compilatore C++ (puoi usare g++ o clang++)
 CXX = g++
-CC = gcc # For C files like glad.c
+# C Compiler (for potential C files, not strictly needed for this example)
+CC = gcc
 
-# Standard C++ version (Dear ImGui requires C++11 or newer)
-CXXSTANDARD = c++11
-CSTANDARD = c99 # For glad.c
+# Flag di compilazione
+# -Wall: Abilita tutti gli avvisi
+# -Wextra: Abilita avvisi extra
+# -fPIC: Genera codice indipendente dalla posizione (necessario per librerie condivise)
+# -O2: Ottimizzazione di livello 2
+# -std=c++11: Standard C++11 (o c++14/c++17 a seconda delle tue esigenze)
+# -D_POSIX_C_SOURCE=200112L: Per alcune definizioni POSIX (es. per math.h)
+CXXFLAGS = -Wall -Wextra -fPIC -O2 -std=c++11 -D_POSIX_C_SOURCE=200112L
+CFLAGS = $(CXXFLAGS) # Stessi flag per C
 
-# --- Compiler Flags ---
-COMMON_CXXFLAGS = -fPIC -Wall -O2 -std=$(CXXSTANDARD)
-COMMON_CFLAGS = -fPIC -Wall -O2 -std=$(CSTANDARD)
+# Flag di linking
+# -shared: Crea una libreria condivisa
+# -lm: Linka la libreria matematica
+# $(shell pkg-config --libs lv2) : Linka le librerie LV2 tramite pkg-config
+# -lX11 -lcairo: Linka le librerie X11 e Cairo per la GUI (se usi X11+Cairo)
+LDFLAGS = -shared -lm $(shell pkg-config --libs lv2)
 
-# Include Paths (common to both core and GUI, or specific sections)
-# LV2 headers are needed by both
-LV2_HEADERS = $(shell pkg-config --cflags lv2)
+# Include directories
+# $(shell pkg-config --cflags lv2) : Include le directory di LV2 tramite pkg-config
+# -I. : Include la directory corrente per i file .h
+# -I/usr/include/cairo -I/usr/include/X11: Per X11 e Cairo (se usi X11+Cairo)
+CXXFLAGS += $(shell pkg-config --cflags lv2) -I.
+CFLAGS += $(shell pkg-config --cflags lv2) -I.
 
-# GUI specific includes
-# Make sure these paths are correct relative to the Makefile
-# For example, if imgui.h is in gua76.lv2/gui/imgui/, then -I./gui/imgui is correct
-IMGUI_INC = -I./gui/imgui -I./gui/glad
-GLFW_INC = $(shell pkg-config --cflags glfw3)
+# Sorgenti del plugin audio
+AUDIO_SRC = gua76.cpp
+# Oggetti del plugin audio
+AUDIO_OBJ = $(AUDIO_SRC:.cpp=.o)
+# Libreria condivisa del plugin audio
+AUDIO_LIB = gua76.so
 
-# All includes for C++ files
-CORE_INCLUDES = $(LV2_HEADERS)
-GUI_INCLUDES = $(LV2_HEADERS) $(IMGUI_INC) $(GLFW_INC)
+# Sorgenti della GUI (Assumendo una GUI X11 in C++)
+GUI_SRC = gua76_gui.cpp
+# Oggetti della GUI
+GUI_OBJ = $(GUI_SRC:.cpp=.o)
+# Libreria condivisa della GUI
+GUI_LIB = gua76_gui.so
 
-# --- Linker Flags ---
-# -shared to build a shared library (plugin)
-# -lm for math functions (e.g., powf, log10f, expf)
-# -ldl for dynamic linking (important for LV2)
-# -lrt for real-time extensions (often useful on Linux)
-COMMON_LIBS = -shared -lm -ldl -lrt
+# Dipendenze della GUI (se usi X11/Cairo)
+GUI_LDFLAGS = $(LDFLAGS) -lX11 -lcairo
+GUI_CXXFLAGS = $(CXXFLAGS) $(shell pkg-config --cflags cairo xcb) # Aggiungi cflags per Cairo/XCB se necessarie
 
-# GUI specific libraries
-# -lGL explicitly for OpenGL
-GLFW_LIBS = $(shell pkg-config --libs glfw3) -lGL
+# Tutti i target
+.PHONY: all clean install uninstall
 
-# --- Core Plugin Build ---
-CORE_SRCS = gua76.cpp
-CORE_OBJS = $(CORE_SRCS:.cpp=.o) # Objects will be in the current directory
-CORE_TARGET = $(BUNDLE_NAME)/$(shell basename $(BUNDLE_NAME)).so # e.g. gua76.lv2/gua76.so
+all: $(AUDIO_LIB) $(GUI_LIB)
 
-# --- GUI Build ---
-# Source files for the GUI, relative to the Makefile
-GUI_SRCS = gui/gua76_gui.cpp \
-           gui/imgui/imgui.cpp \
-           gui/imgui/imgui_draw.cpp \
-           gui/imgui/imgui_widgets.cpp \
-           gui/imgui/imgui_impl_opengl3.cpp \
-           gui/imgui/imgui_impl_glfw.cpp \
-           gui/glad/glad.c
+# Regola per compilare il plugin audio
+$(AUDIO_LIB): $(AUDIO_OBJ)
+	$(CXX) $(LDFLAGS) -o $@ $(AUDIO_OBJ)
 
-# Object files for GUI. We'll place them in a 'build/' directory to keep the root clean.
-GUI_OBJS_DIR = build
-GUI_OBJS = $(patsubst gui/%.cpp, $(GUI_OBJS_DIR)/%.o, $(filter %.cpp, $(GUI_SRCS)))
-GUI_OBJS += $(patsubst gui/%.c, $(GUI_OBJS_DIR)/%.o, $(filter %.c, $(GUI_SRCS)))
-
-GUI_TARGET = $(BUNDLE_NAME)/$(shell basename $(BUNDLE_NAME))_ui.so # e.g. gua76.lv2/gua76_ui.so
-
-# --- Targets ---
-.PHONY: all clean deploy
-
-all: $(CORE_TARGET) $(GUI_TARGET)
-
-# Rule for building the core plugin shared library
-$(CORE_TARGET): $(CORE_OBJS)
-	@mkdir -p $(BUNDLE_NAME) # Ensure bundle directory exists
-	$(CXX) $(COMMON_CXXFLAGS) $(CORE_INCLUDES) $^ $(COMMON_LIBS) -o $@
-
-# Rule for building the GUI shared library
-$(GUI_TARGET): $(GUI_OBJS)
-	@mkdir -p $(BUNDLE_NAME) $(GUI_OBJS_DIR) # Ensure bundle and build directories exist
-	$(CXX) $(COMMON_CXXFLAGS) $(GUI_INCLUDES) $^ $(COMMON_LIBS) $(GLFW_LIBS) -o $@
-
-# Rule for compiling C++ files for the core (objects in current dir)
+# Regola per compilare i file .cpp in .o per il plugin audio
 %.o: %.cpp
-	$(CXX) $(COMMON_CXXFLAGS) $(CORE_INCLUDES) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Rule for compiling C++ files for the GUI (objects in build/ dir)
-$(GUI_OBJS_DIR)/%.o: gui/%.cpp
-	@mkdir -p $(dir $@) # Ensure the object directory exists
-	$(CXX) $(COMMON_CXXFLAGS) $(GUI_INCLUDES) -c $< -o $@
+# Regola per compilare la GUI
+$(GUI_LIB): $(GUI_OBJ)
+	$(CXX) $(GUI_LDFLAGS) -o $@ $(GUI_OBJ)
 
-# Rule for compiling C files for the GUI (like glad.c, objects in build/ dir)
-$(GUI_OBJS_DIR)/%.o: gui/%.c
-	@mkdir -p $(dir $@)
-	$(CC) $(COMMON_CFLAGS) $(GUI_INCLUDES) -c $< -o $@
+# Regola per compilare i file .cpp in .o per la GUI
+%.o: %.cpp
+	$(CXX) $(GUI_CXXFLAGS) -c $< -o $@
 
-# --- Clean Target ---
+# Installazione del plugin
+install: all
+	@echo "Installing $(BUNDLE_NAME) to $(LV2_PATH)..."
+	mkdir -p $(LV2_PATH)/$(BUNDLE_NAME)
+	cp $(AUDIO_LIB) $(LV2_PATH)/$(BUNDLE_NAME)
+	cp $(GUI_LIB) $(LV2_PATH)/$(BUNDLE_NAME)
+	cp manifest.ttl $(LV2_PATH)/$(BUNDLE_NAME)/gua76.ttl # Copia il manifest
+	@echo "Installation complete."
+
+# Disinstallazione del plugin
+uninstall:
+	@echo "Uninstalling $(BUNDLE_NAME) from $(LV2_PATH)..."
+	rm -rf $(LV2_PATH)/$(BUNDLE_NAME)
+	@echo "Uninstallation complete."
+
+# Pulizia dei file generati
 clean:
-	rm -rf $(BUNDLE_NAME)/*.so $(CORE_OBJS) $(GUI_OBJS_DIR)/ *.o
-
-# --- Deployment Target (Optional, for easy installation) ---
-# This assumes you want to install it to your user's LV2 path.
-# Change this path if you install system-wide or elsewhere.
-LV2_INSTALL_PATH := ~/.lv2
-
-deploy: all
-	@echo "Deploying $(BUNDLE_NAME) to $(LV2_INSTALL_PATH)/$(BUNDLE_NAME)..."
-	@mkdir -p $(LV2_INSTALL_PATH)
-	@cp -r $(BUNDLE_NAME) $(LV2_INSTALL_PATH)/
-	@echo "Deployment complete."
-	@echo "You might need to refresh your DAW's plugin list."
+	@echo "Cleaning up..."
+	rm -f $(AUDIO_OBJ) $(AUDIO_LIB) $(GUI_OBJ) $(GUI_LIB)
+	@echo "Clean complete."
