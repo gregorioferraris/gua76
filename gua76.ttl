@@ -65,10 +65,58 @@
         lv2:portProperty lv2:toggled ; # Indica che è un interruttore
         rdfs:comment "Applies a -10dB attenuation pad at the input stage." ;
     ] , [
-        # Attack
+        # Bypass (Interruttore ON/OFF)
         a lv2:InputPort ,
             lv2:ControlPort ;
         lv2:index 3 ;
+        lv2:symbol "bypass" ;
+        lv2:name "Bypass" ;
+        lv2:default 0.0 ; # Default OFF (plugin attivo)
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+        lv2:portProperty lv2:toggled ;
+        rdfs:comment "Bypass the compressor processing." ;
+    ] , [
+        # Normalize Output (Interruttore ON/OFF)
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "normalize_output" ;
+        lv2:name "Normalize Output" ;
+        lv2:default 0.0 ; # Default OFF
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+        lv2:portProperty lv2:toggled ;
+        rdfs:comment "Applies an additional fixed attenuation to the output, typically to reduce peaks." ;
+    ] , [
+        # M/S Mode (Interruttore ON/OFF)
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 5 ; # NUOVO INDICE
+        lv2:symbol "ms_mode_active" ;
+        lv2:name "M/S Mode" ;
+        lv2:default 1.0 ; # Default ON per la modalità M/S
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+        lv2:portProperty lv2:toggled ;
+        rdfs:comment "Activates Mid/Side processing for stereo signal." ;
+    ] , [
+        # External Sidechain (Interruttore ON/OFF)
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 6 ; # NUOVO INDICE
+        lv2:symbol "external_sc_active" ;
+        lv2:name "External Sidechain" ;
+        lv2:default 0.0 ; # Default OFF (usa sidechain interna)
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+        lv2:portProperty lv2:toggled ;
+        rdfs:comment "Activates external sidechain input for compressor keying." ;
+    ] , [
+        # Attack
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 7 ; # Indice spostato
         lv2:symbol "attack" ;
         lv2:name "Attack" ;
         lv2:default 0.000020 ; # 20 microsecondi
@@ -80,7 +128,7 @@
         # Release
         a lv2:InputPort ,
             lv2:ControlPort ;
-        lv2:index 4 ;
+        lv2:index 8 ; # Indice spostato
         lv2:symbol "release" ;
         lv2:name "Release" ;
         lv2:default 0.2 ; # 200 millisecondi
@@ -92,7 +140,7 @@
         # Ratio
         a lv2:InputPort ,
             lv2:ControlPort ;
-        lv2:index 5 ;
+        lv2:index 9 ; # Indice spostato
         lv2:symbol "ratio" ;
         lv2:name "Ratio" ;
         lv2:default 4.0 ;
@@ -103,7 +151,7 @@
         # Input Clip Drive (per la simulazione del trasformatore di input)
         a lv2:InputPort ,
             lv2:ControlPort ;
-        lv2:index 6 ;
+        lv2:index 10 ; # Indice spostato
         lv2:symbol "input_clip_drive" ;
         lv2:name "Input Clip Drive" ;
         lv2:default 1.0 ;
@@ -114,7 +162,7 @@
         # Output Clip Drive (per la simulazione del trasformatore di output)
         a lv2:InputPort ,
             lv2:ControlPort ;
-        lv2:index 7 ;
+        lv2:index 11 ; # Indice spostato
         lv2:symbol "output_clip_drive" ;
         lv2:name "Output Clip Drive" ;
         lv2:default 1.0 ;
@@ -125,7 +173,7 @@
         # Frequenza HPF Sidechain
         a lv2:InputPort ,
             lv2:ControlPort ;
-        lv2:index 8 ;
+        lv2:index 12 ; # Indice spostato
         lv2:symbol "sc_hpf_freq" ;
         lv2:name "SC HPF Freq" ;
         lv2:default 20.0 ;
@@ -137,7 +185,7 @@
         # Frequenza LPF Sidechain
         a lv2:InputPort ,
             lv2:ControlPort ;
-        lv2:index 9 ;
+        lv2:index 13 ; # Indice spostato
         lv2:symbol "sc_lpf_freq" ;
         lv2:name "SC LPF Freq" ;
         lv2:default 20000.0 ;
@@ -147,41 +195,41 @@
         rdfs:comment "Low-pass filter frequency for the sidechain signal." ;
     ] , [
         # ------------------------------------
-        # Porte Audio Stereo
+        # Porte Audio Stereo (gli indici sono tutti spostati di 2 ora!)
         # ------------------------------------
 
         # Audio Input Left (main)
         a lv2:InputPort ,
             lv2:AudioPort ;
-        lv2:index 10 ;
+        lv2:index 14 ; # Nuovo indice
         lv2:symbol "audio_in_L" ;
         lv2:name "Audio In L" ;
     ] , [
         # Audio Input Right (main)
         a lv2:InputPort ,
             lv2:AudioPort ;
-        lv2:index 11 ;
+        lv2:index 15 ; # Nuovo indice
         lv2:symbol "audio_in_R" ;
         lv2:name "Audio In R" ;
     ] , [
         # Audio Output Left (main)
         a lv2:OutputPort ,
             lv2:AudioPort ;
-        lv2:index 12 ;
+        lv2:index 16 ; # Nuovo indice
         lv2:symbol "audio_out_L" ;
         lv2:name "Audio Out L" ;
     ] , [
         # Audio Output Right (main)
         a lv2:OutputPort ,
             lv2:AudioPort ;
-        lv2:index 13 ;
+        lv2:index 17 ; # Nuovo indice
         lv2:symbol "audio_out_R" ;
         lv2:name "Audio Out R" ;
     ] , [
         # Audio Input Sidechain Left (external)
         a lv2:InputPort ,
             lv2:AudioPort ;
-        lv2:index 14 ;
+        lv2:index 18 ; # Nuovo indice
         lv2:symbol "audio_sidechain_in_L" ;
         lv2:name "Sidechain Input L" ;
         pprops:notOnGUI true ; # Questa porta non appare tipicamente nella GUI del plugin
@@ -190,7 +238,7 @@
         # Audio Input Sidechain Right (external)
         a lv2:InputPort ,
             lv2:AudioPort ;
-        lv2:index 15 ;
+        lv2:index 19 ; # Nuovo indice
         lv2:symbol "audio_sidechain_in_R" ;
         lv2:name "Sidechain Input R" ;
         pprops:notOnGUI true ; # Questa porta non appare tipicamente nella GUI del plugin
