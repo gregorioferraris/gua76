@@ -1,90 +1,113 @@
-# Makefile per il plugin LV2 gua76
+# --- General Project Settings ---
+# Plugin Bundle Name (matches folder name)
+BUNDLE_NAME := gua76.lv2
 
-# --- CONFIGURAZIONE ---
+# URI for the core plugin (MUST match gua76.cpp and gua76.ttl)
+LV2_URI := http://moddevices.com/plugins/mod-devel/gua76
 
-# Nome del plugin. Deve corrispondere al nome della cartella LV2 e al prefisso dei file .cpp, .ttl, .so
-PLUGIN_NAME = gua76
+# URI for the GUI (MUST match gua76_gui.cpp and gua76.ttl)
+LV2_GUI_URI := http://moddevices.com/plugins/mod-devel/gua76_ui
 
-# Directory di installazione dei plugin LV2
-# Per installazioni personali: $(HOME)/.lv2/
-# Per installazioni a livello di sistema: /usr/local/lib/lv2/ (o /usr/lib/lv2/)
-INSTALL_DIR = $(HOME)/.lv2/
+# Compiler (GCC/G++)
+CXX = g++
+CC = gcc # For C files like glad.c
 
-# Flag del compilatore (ottimizzazioni, avvisi, C++11)
-CXXFLAGS = -O2 -Wall -fPIC -std=c++11
+# Standard C++ version (Dear ImGui requires C++11 or newer)
+CXXSTANDARD = c++11
+CSTANDARD = c99 # For glad.c
 
-# Flag del linker (librerie LV2, math, X11 per la GUI)
-LDFLAGS = -lm -ldl $(shell pkg-config --libs lv2) $(shell pkg-config --libs xcb xcb-util xcb-image xcb-render xcb-shm xcb-randr)
+# --- Compiler Flags ---
+COMMON_CXXFLAGS = -fPIC -Wall -O2 -std=$(CXXSTANDARD)
+COMMON_CFLAGS = -fPIC -Wall -O2 -std=$(CSTANDARD)
 
-# Headers e librerie per LV2 e X11 (necessari per la GUI)
-# Usa pkg-config per trovare i percorsi corretti
-CXXFLAGS += $(shell pkg-config --cflags lv2) $(shell pkg-config --cflags xcb xcb-util xcb-image xcb-render xcb-shm xcb-randr)
+# Include Paths (common to both core and GUI, or specific sections)
+# LV2 headers are needed by both
+LV2_HEADERS = $(shell pkg-config --cflags lv2)
 
-# Sorgenti del plugin core
-PLUGIN_SRC = $(PLUGIN_NAME).cpp
+# GUI specific includes
+# Make sure these paths are correct relative to the Makefile
+# For example, if imgui.h is in gua76.lv2/gui/imgui/, then -I./gui/imgui is correct
+IMGUI_INC = -I./gui/imgui -I./gui/glad
+GLFW_INC = $(shell pkg-config --cflags glfw3)
 
-# Sorgenti della GUI
-GUI_SRC = gui/$(PLUGIN_NAME)_gui.cpp
+# All includes for C++ files
+CORE_INCLUDES = $(LV2_HEADERS)
+GUI_INCLUDES = $(LV2_HEADERS) $(IMGUI_INC) $(GLFW_INC)
 
-# Oggetti compilati
-PLUGIN_OBJ = $(PLUGIN_SRC:.cpp=.o)
-GUI_OBJ = $(GUI_SRC:.cpp=.o)
+# --- Linker Flags ---
+# -shared to build a shared library (plugin)
+# -lm for math functions (e.g., powf, log10f, expf)
+# -ldl for dynamic linking (important for LV2)
+# -lrt for real-time extensions (often useful on Linux)
+COMMON_LIBS = -shared -lm -ldl -lrt
 
-# Nomi dei file di output
-PLUGIN_SO = $(PLUGIN_NAME).so
-GUI_SO = gui/$(PLUGIN_NAME)_gui.so
+# GUI specific libraries
+# -lGL explicitly for OpenGL
+GLFW_LIBS = $(shell pkg-config --libs glfw3) -lGL
 
-# Cartella di destinazione del plugin
-DEST_DIR = $(INSTALL_DIR)/$(PLUGIN_NAME).lv2
+# --- Core Plugin Build ---
+CORE_SRCS = gua76.cpp
+CORE_OBJS = $(CORE_SRCS:.cpp=.o) # Objects will be in the current directory
+CORE_TARGET = $(BUNDLE_NAME)/$(shell basename $(BUNDLE_NAME)).so # e.g. gua76.lv2/gua76.so
 
-# ------------------------------------
-# REGOLE DI COMPILAZIONE
-# ------------------------------------
+# --- GUI Build ---
+# Source files for the GUI, relative to the Makefile
+GUI_SRCS = gui/gua76_gui.cpp \
+           gui/imgui/imgui.cpp \
+           gui/imgui/imgui_draw.cpp \
+           gui/imgui/imgui_widgets.cpp \
+           gui/imgui/imgui_impl_opengl3.cpp \
+           gui/imgui/imgui_impl_glfw.cpp \
+           gui/glad/glad.c
 
-.PHONY: all clean install uninstall
+# Object files for GUI. We'll place them in a 'build/' directory to keep the root clean.
+GUI_OBJS_DIR = build
+GUI_OBJS = $(patsubst gui/%.cpp, $(GUI_OBJS_DIR)/%.o, $(filter %.cpp, $(GUI_SRCS)))
+GUI_OBJS += $(patsubst gui/%.c, $(GUI_OBJS_DIR)/%.o, $(filter %.c, $(GUI_SRCS)))
 
-all: $(DEST_DIR) $(DEST_DIR)/$(PLUGIN_SO) $(DEST_DIR)/$(PLUGIN_NAME).ttl $(DEST_DIR)/$(GUI_SO)
+GUI_TARGET = $(BUNDLE_NAME)/$(shell basename $(BUNDLE_NAME))_ui.so # e.g. gua76.lv2/gua76_ui.so
 
-# Crea la directory di destinazione se non esiste
-$(DEST_DIR):
-	@mkdir -p $(DEST_DIR)/gui
+# --- Targets ---
+.PHONY: all clean deploy
 
-# Compila il core del plugin
-$(DEST_DIR)/$(PLUGIN_SO): $(PLUGIN_OBJ)
-	@echo "Linking $(PLUGIN_SO)..."
-	$(CXX) $(CXXFLAGS) -shared -o $@ $(PLUGIN_OBJ) $(LDFLAGS)
+all: $(CORE_TARGET) $(GUI_TARGET)
 
-# Copia il file TTL (descrizione del plugin)
-$(DEST_DIR)/$(PLUGIN_NAME).ttl: $(PLUGIN_NAME).ttl
-	@echo "Copying $(PLUGIN_NAME).ttl..."
-	@cp $< $@
+# Rule for building the core plugin shared library
+$(CORE_TARGET): $(CORE_OBJS)
+	@mkdir -p $(BUNDLE_NAME) # Ensure bundle directory exists
+	$(CXX) $(COMMON_CXXFLAGS) $(CORE_INCLUDES) $^ $(COMMON_LIBS) -o $@
 
-# Compila la GUI
-$(DEST_DIR)/$(GUI_SO): $(GUI_OBJ)
-	@echo "Linking $(GUI_SO)..."
-	$(CXX) $(CXXFLAGS) -shared -o $@ $(GUI_OBJ) $(LDFLAGS)
+# Rule for building the GUI shared library
+$(GUI_TARGET): $(GUI_OBJS)
+	@mkdir -p $(BUNDLE_NAME) $(GUI_OBJS_DIR) # Ensure bundle and build directories exist
+	$(CXX) $(COMMON_CXXFLAGS) $(GUI_INCLUDES) $^ $(COMMON_LIBS) $(GLFW_LIBS) -o $@
 
-# Regole per la compilazione dei file .cpp in .o
+# Rule for compiling C++ files for the core (objects in current dir)
 %.o: %.cpp
-	@echo "Compiling $<..."
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(COMMON_CXXFLAGS) $(CORE_INCLUDES) -c $< -o $@
 
-gui/%.o: gui/%.cpp
-	@echo "Compiling $<..."
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+# Rule for compiling C++ files for the GUI (objects in build/ dir)
+$(GUI_OBJS_DIR)/%.o: gui/%.cpp
+	@mkdir -p $(dir $@) # Ensure the object directory exists
+	$(CXX) $(COMMON_CXXFLAGS) $(GUI_INCLUDES) -c $< -o $@
 
-# Regola per pulire i file compilati e la directory di installazione
+# Rule for compiling C files for the GUI (like glad.c, objects in build/ dir)
+$(GUI_OBJS_DIR)/%.o: gui/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(COMMON_CFLAGS) $(GUI_INCLUDES) -c $< -o $@
+
+# --- Clean Target ---
 clean:
-	@echo "Cleaning up..."
-	@rm -f $(PLUGIN_OBJ) $(GUI_OBJ) $(PLUGIN_SO) $(GUI_SO)
-	@rm -rf $(DEST_DIR)
+	rm -rf $(BUNDLE_NAME)/*.so $(CORE_OBJS) $(GUI_OBJS_DIR)/ *.o
 
-# Regola per installare il plugin
-install: all
-	@echo "Plugin $(PLUGIN_NAME) installed to $(DEST_DIR)"
+# --- Deployment Target (Optional, for easy installation) ---
+# This assumes you want to install it to your user's LV2 path.
+# Change this path if you install system-wide or elsewhere.
+LV2_INSTALL_PATH := ~/.lv2
 
-# Regola per disinstallare il plugin
-uninstall:
-	@echo "Uninstalling $(PLUGIN_NAME)..."
-	@rm -rf $(DEST_DIR)
-	@echo "Plugin $(PLUGIN_NAME) uninstalled from $(INSTALL_DIR)"
+deploy: all
+	@echo "Deploying $(BUNDLE_NAME) to $(LV2_INSTALL_PATH)/$(BUNDLE_NAME)..."
+	@mkdir -p $(LV2_INSTALL_PATH)
+	@cp -r $(BUNDLE_NAME) $(LV2_INSTALL_PATH)/
+	@echo "Deployment complete."
+	@echo "You might need to refresh your DAW's plugin list."
