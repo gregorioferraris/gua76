@@ -1,246 +1,130 @@
-@prefix doap:  <http://usefulinc.com/ns/doap#> .
-@prefix lv2:   <http://lv2plug.in/ns/lv2core#> .
-@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix lv2:  <http://lv2plug.in/ns/lv2core#> .
+@prefix ui:   <http://lv2plug.in/ns/extensions/ui#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix pset: <http://lv2plug.in/ns/ext/presets#> .
+@prefix atom: <http://lv2plug.in/ns/ext/atom#> .
+@prefix urid: <http://lv2plug.in/ns/ext/urid#> .
+@prefix midi: <http://lv2plug.in/ns/ext/midi#> .
+@prefix log:  <http://lv2plug.in/ns/ext/log#> .
 @prefix units: <http://lv2plug.in/ns/extensions/units#> .
-@prefix pprops: <http://lv2plug.in/ns/ext/port-props#> .
-@prefix ui:    <http://lv2plug.in/ns/extensions/ui#> .
-@prefix foaf:  <http://xmlns.com/foaf/0.1/> .
+@prefix doap: <http://usefulinc.com/ns/doap#> .
 
-# URI del Plugin (DEVE CORRISPONDERE ESATTAMENTE A QUELLO IN gua76.cpp)
+# Il nostro URI del plugin (deve corrispondere a gua76.cpp e Makefile)
 <http://moddevices.com/plugins/mod-devel/gua76>
     a lv2:Plugin ;
     lv2:optionalFeature lv2:hardRTCapable ;
-    lv2:requiredFeature lv2:isControllable ;
-    doap:name "gua76 Compressor" ; # Nome visualizzato nella DAW
-    doap:developer [
-        rdfs:label "Your Name" ; # <--- Inserisci il tuo nome qui
-        foaf:mbox <mailto:your.email@example.com> ; # <--- Inserisci la tua email qui
-    ] ;
+    lv2:requiredFeature urid:map ;
+    lv2:requiredFeature log:trace ;
+
+    doap:name "GUA76 Compressor" ;
     doap:maintainer [
-        rdfs:label "Your Name" ; # <--- Inserisci il tuo nome qui
-        foaf:mbox <mailto:your.email@example.com> ; # <--- Inserisci la tua email qui
+        doap:name "Your Name" ;
+        doap:mbox <mailto:your.email@example.com> ;
     ] ;
+    doap:homepage <http://yourwebsite.com> ;
+    doap:license <http://opensource.org/licenses/MIT> ;
 
-    # URI della GUI (DEVE CORRISPONDERE A QUELLO IN gui/gua76_gui.cpp)
+    # --- GUI Definition ---
     ui:ui <http://moddevices.com/plugins/mod-devel/gua76_ui> ;
+    .
 
-    # ------------------------------------
-    # Porte di Controllo del Plugin
-    # ------------------------------------
+# Definizione separata per la GUI
+<http://moddevices.com/plugins/mod-devel/gua76_ui>
+    a ui:X11UI ; # Su Linux
+    ui:binary <gua76_ui.so> ;
+    lv2:requiredFeature ui:idle ;
+    lv2:requiredFeature urid:map ;
+    .
 
-    # Input Gain (Regolabile da -20 a +20 dB, Default 0 dB)
-    lv2:port [
-        a lv2:InputPort ,
-            lv2:ControlPort ;
+# Definizione delle porte
+lv2:port [
+        a lv2:InputPort , lv2:ControlPort ;
         lv2:index 0 ;
         lv2:symbol "input_gain" ;
         lv2:name "Input Gain" ;
-        lv2:default 0.0 ; # Default 0 dB
+        lv2:default 0.0 ;
         lv2:minimum -20.0 ;
         lv2:maximum 20.0 ;
-        units:unit units:db ; # Unità in Decibel
-        rdfs:comment "Controls the input level to the compressor, influencing drive." ;
+        units:unit units:db ;
     ] , [
-        # Output Gain (Regolabile da -20 a +20 dB, Default 0 dB)
-        a lv2:InputPort ,
-            lv2:ControlPort ;
+        a lv2:InputPort , lv2:ControlPort ;
         lv2:index 1 ;
         lv2:symbol "output_gain" ;
         lv2:name "Output Gain" ;
-        lv2:default 0.0 ; # Default 0 dB
+        lv2:default 0.0 ;
         lv2:minimum -20.0 ;
         lv2:maximum 20.0 ;
-        units:unit units:db ; # Unità in Decibel
-        rdfs:comment "Controls the output level after compression and output clipping." ;
+        units:unit units:db ;
     ] , [
-        # Input -10dB Pad (Interruttore ON/OFF)
-        a lv2:InputPort ,
-            lv2:ControlPort ;
+        a lv2:InputPort , lv2:ControlPort ;
         lv2:index 2 ;
         lv2:symbol "input_pad_10db" ;
         lv2:name "Input -10dB Pad" ;
-        lv2:default 0.0 ; # Default OFF
+        lv2:portProperty lv2:toggled ;
+        lv2:default 0.0 ;
         lv2:minimum 0.0 ;
-        lv2:maximum 1.0 ; # 0.0 per OFF, 1.0 per ON
-        lv2:portProperty lv2:toggled ; # Indica che è un interruttore
-        rdfs:comment "Applies a -10dB attenuation pad at the input stage." ;
+        lv2:maximum 1.0 ;
     ] , [
-        # Bypass (Interruttore ON/OFF)
-        a lv2:InputPort ,
-            lv2:ControlPort ;
+        a lv2:InputPort , lv2:ControlPort ;
         lv2:index 3 ;
         lv2:symbol "bypass" ;
         lv2:name "Bypass" ;
-        lv2:default 0.0 ; # Default OFF (plugin attivo)
+        lv2:portProperty lv2:toggled ;
+        lv2:default 0.0 ;
         lv2:minimum 0.0 ;
         lv2:maximum 1.0 ;
-        lv2:portProperty lv2:toggled ;
-        rdfs:comment "Bypass the compressor processing." ;
     ] , [
-        # Normalize Output (Interruttore ON/OFF)
-        a lv2:InputPort ,
-            lv2:ControlPort ;
+        a lv2:InputPort , lv2:ControlPort ;
         lv2:index 4 ;
         lv2:symbol "normalize_output" ;
         lv2:name "Normalize Output" ;
-        lv2:default 0.0 ; # Default OFF
+        lv2:portProperty lv2:toggled ;
+        lv2:default 0.0 ;
         lv2:minimum 0.0 ;
         lv2:maximum 1.0 ;
-        lv2:portProperty lv2:toggled ;
-        rdfs:comment "Applies an additional fixed attenuation to the output, typically to reduce peaks." ;
     ] , [
-        # M/S Mode (Interruttore ON/OFF)
-        a lv2:InputPort ,
-            lv2:ControlPort ;
-        lv2:index 5 ; # NUOVO INDICE
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 5 ;
         lv2:symbol "ms_mode_active" ;
         lv2:name "M/S Mode" ;
-        lv2:default 1.0 ; # Default ON per la modalità M/S
+        lv2:portProperty lv2:toggled ;
+        lv2:default 0.0 ;
         lv2:minimum 0.0 ;
         lv2:maximum 1.0 ;
-        lv2:portProperty lv2:toggled ;
-        rdfs:comment "Activates Mid/Side processing for stereo signal." ;
     ] , [
-        # External Sidechain (Interruttore ON/OFF)
-        a lv2:InputPort ,
-            lv2:ControlPort ;
-        lv2:index 6 ; # NUOVO INDICE
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 6 ;
         lv2:symbol "external_sc_active" ;
         lv2:name "External Sidechain" ;
-        lv2:default 0.0 ; # Default OFF (usa sidechain interna)
+        lv2:portProperty lv2:toggled ;
+        lv2:default 0.0 ;
         lv2:minimum 0.0 ;
         lv2:maximum 1.0 ;
-        lv2:portProperty lv2:toggled ;
-        rdfs:comment "Activates external sidechain input for compressor keying." ;
     ] , [
-        # Attack
-        a lv2:InputPort ,
-            lv2:ControlPort ;
-        lv2:index 7 ; # Indice spostato
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 7 ;
         lv2:symbol "attack" ;
         lv2:name "Attack" ;
-        lv2:default 0.000020 ; # 20 microsecondi
-        lv2:minimum 0.000020 ; # ~20us (minimo dell'1176)
-        lv2:maximum 0.000800 ; # ~800us (massimo dell'1176)
-        units:unit units:s ; # Usiamo secondi, è più standard per LV2
-        rdfs:comment "Attack time of the compressor, from ultra-fast to fast." ;
+        lv2:default 0.000020 ; # 20us (più veloce)
+        lv2:minimum 0.000020 ;
+        lv2:maximum 0.000800 ; # 800us (più lento)
+        units:unit units:s ;
+        lv2:portProperty lv2:enumeration ; # È a scatti
+        lv2:scalePoint [ rdfs:label "20us" ; lv2:value 0.000020 ] ,
+                       [ rdfs:label "40us" ; lv2:value 0.000040 ] ,
+                       [ rdfs:label "80us" ; lv2:value 0.000080 ] ,
+                       [ rdfs:label "160us" ; lv2:value 0.000160 ] ,
+                       [ rdfs:label "320us" ; lv2:value 0.000320 ] ,
+                       [ rdfs:label "640us" ; lv2:value 0.000640 ] ,
+                       [ rdfs:label "800us" ; lv2:value 0.000800 ] ;
     ] , [
-        # Release
-        a lv2:InputPort ,
-            lv2:ControlPort ;
-        lv2:index 8 ; # Indice spostato
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 8 ;
         lv2:symbol "release" ;
         lv2:name "Release" ;
-        lv2:default 0.2 ; # 200 millisecondi
-        lv2:minimum 0.05 ; # ~50ms (minimo dell'1176)
-        lv2:maximum 1.1 ; # ~1.1s (massimo dell'1176)
-        units:unit units:s ; # Usiamo secondi
-        rdfs:comment "Release time of the compressor, from fast to slow." ;
-    ] , [
-        # Ratio
-        a lv2:InputPort ,
-            lv2:ControlPort ;
-        lv2:index 9 ; # Indice spostato
-        lv2:symbol "ratio" ;
-        lv2:name "Ratio" ;
-        lv2:default 4.0 ;
-        lv2:minimum 4.0 ;
-        lv2:maximum 25.0 ; # 25.0 sarà il valore per All-Button
-        rdfs:comment "Compression ratio: 4:1, 8:1, 12:1, 20:1, or All-Button mode (25.0)." ;
-    ] , [
-        # Input Clip Drive (per la simulazione del trasformatore di input)
-        a lv2:InputPort ,
-            lv2:ControlPort ;
-        lv2:index 10 ; # Indice spostato
-        lv2:symbol "input_clip_drive" ;
-        lv2:name "Input Clip Drive" ;
-        lv2:default 1.0 ;
-        lv2:minimum 0.0 ;
-        lv2:maximum 10.0 ; # Un range più ampio per la saturazione
-        rdfs:comment "Intensity of soft clipping at the input stage, simulating transformer saturation." ;
-    ] , [
-        # Output Clip Drive (per la simulazione del trasformatore di output)
-        a lv2:InputPort ,
-            lv2:ControlPort ;
-        lv2:index 11 ; # Indice spostato
-        lv2:symbol "output_clip_drive" ;
-        lv2:name "Output Clip Drive" ;
-        lv2:default 1.0 ;
-        lv2:minimum 0.0 ;
-        lv2:maximum 10.0 ; # Un range più ampio per la saturazione
-        rdfs:comment "Intensity of soft clipping at the output stage, simulating transformer saturation." ;
-    ] , [
-        # Frequenza HPF Sidechain
-        a lv2:InputPort ,
-            lv2:ControlPort ;
-        lv2:index 12 ; # Indice spostato
-        lv2:symbol "sc_hpf_freq" ;
-        lv2:name "SC HPF Freq" ;
-        lv2:default 20.0 ;
-        lv2:minimum 20.0 ;
-        lv2:maximum 20000.0 ;
-        units:unit units:hz ;
-        rdfs:comment "High-pass filter frequency for the sidechain signal." ;
-    ] , [
-        # Frequenza LPF Sidechain
-        a lv2:InputPort ,
-            lv2:ControlPort ;
-        lv2:index 13 ; # Indice spostato
-        lv2:symbol "sc_lpf_freq" ;
-        lv2:name "SC LPF Freq" ;
-        lv2:default 20000.0 ;
-        lv2:minimum 20.0 ;
-        lv2:maximum 20000.0 ;
-        units:unit units:hz ;
-        rdfs:comment "Low-pass filter frequency for the sidechain signal." ;
-    ] , [
-        # ------------------------------------
-        # Porte Audio Stereo (gli indici sono tutti spostati di 2 ora!)
-        # ------------------------------------
-
-        # Audio Input Left (main)
-        a lv2:InputPort ,
-            lv2:AudioPort ;
-        lv2:index 14 ; # Nuovo indice
-        lv2:symbol "audio_in_L" ;
-        lv2:name "Audio In L" ;
-    ] , [
-        # Audio Input Right (main)
-        a lv2:InputPort ,
-            lv2:AudioPort ;
-        lv2:index 15 ; # Nuovo indice
-        lv2:symbol "audio_in_R" ;
-        lv2:name "Audio In R" ;
-    ] , [
-        # Audio Output Left (main)
-        a lv2:OutputPort ,
-            lv2:AudioPort ;
-        lv2:index 16 ; # Nuovo indice
-        lv2:symbol "audio_out_L" ;
-        lv2:name "Audio Out L" ;
-    ] , [
-        # Audio Output Right (main)
-        a lv2:OutputPort ,
-            lv2:AudioPort ;
-        lv2:index 17 ; # Nuovo indice
-        lv2:symbol "audio_out_R" ;
-        lv2:name "Audio Out R" ;
-    ] , [
-        # Audio Input Sidechain Left (external)
-        a lv2:InputPort ,
-            lv2:AudioPort ;
-        lv2:index 18 ; # Nuovo indice
-        lv2:symbol "audio_sidechain_in_L" ;
-        lv2:name "Sidechain Input L" ;
-        pprops:notOnGUI true ; # Questa porta non appare tipicamente nella GUI del plugin
-        rdfs:comment "Optional external Left audio input for sidechain compression." ;
-    ] , [
-        # Audio Input Sidechain Right (external)
-        a lv2:InputPort ,
-            lv2:AudioPort ;
-        lv2:index 19 ; # Nuovo indice
-        lv2:symbol "audio_sidechain_in_R" ;
-        lv2:name "Sidechain Input R" ;
-        pprops:notOnGUI true ; # Questa porta non appare tipicamente nella GUI del plugin
-        rdfs:comment "Optional external Right audio input for sidechain compression." ;
-    ] .
+        lv2:default 0.2 ; # 200ms
+        lv2:minimum 0.05 ; # 50ms (più veloce)
+        lv2:maximum 1.1 ; # 1100ms (più lento)
+        units:unit units:s ;
+        lv2:portProperty lv2:enumeration ; # È a scatti
+        lv2:scalePoint [ rdfs:label "50ms" ; lv2:value 0.05 ]
