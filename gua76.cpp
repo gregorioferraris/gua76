@@ -1,29 +1,25 @@
-#include <lv2/ui/ui.h>
-#include <lv2/urid/urid.h>
+#include <lv2/core/lv2.h>
 #include <lv2/atom/atom.h>
-#include <lv2/atom/atom.h> // Incluso due volte? No, solo una volta.
-#include <lv2/atom/forge.h>
 #include <lv2/atom/util.h>
 #include <lv2/midi/midi.h>
+#include <lv2/urid/urid.h>
+#include <lv2/log/logger.h>
+#include <lv2/log/log.h>
+#include <lv2/worker/worker.h> // Se volessi fare calcoli complessi off-thread
 
-// Standard C++ per X11
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/Xatom.h>
-#include <cairo.h>       // Per disegnare
-#include <cairo-xlib.h>  // Integrazione Cairo con X11
-
-#include <stdio.h> // Per debug
+#include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 
-// Definizione URI del plugin e della GUI (Devono corrispondere al .ttl)
-#define GUA76_GUI_URI   "http://moddevices.com/plugins/mod-devel/gua76_ui"
-#define GUA76_PLUGIN_URI "http://moddevices.com/plugins/mod-devel/gua76"
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
-// Enum degli indici delle porte (devono corrispondere a gua76.ttl)
-// È cruciale che questi siano ESATTAMENTE gli stessi del file gua76.ttl
+// Plugin URI (deve corrispondere a gua76.ttl)
+#define GUA76_URI "http://moddevices.com/plugins/mod-devel/gua76"
+
+// Enum delle porte (DEVONO corrispondere agli indici in gua76.ttl)
 typedef enum {
     GUA76_INPUT_GAIN = 0,
     GUA76_OUTPUT_GAIN = 1,
@@ -39,383 +35,344 @@ typedef enum {
     GUA76_OUTPUT_CLIP_DRIVE = 11,
     GUA76_SC_HPF_FREQ = 12,
     GUA76_SC_LPF_FREQ = 13,
-    // Le porte audio non sono gestite direttamente dalla GUI, quindi non le includiamo qui
-    // ma le posizioni degli indici DEVONO COMUNQUE ALLINEARSI CON IL CORE DEL PLUGIN
+    GUA76_SC_HPF_Q = 14, // NEW
+    GUA76_SC_LPF_Q = 15, // NEW
+    GUA76_METER_DISPLAY_MODE = 16, // NEW
+    GUA76_GAIN_REDUCTION_METER = 17, // NEW (Output for GUI)
+    GUA76_INPUT_RMS = 18, // NEW (Output for GUI)
+    GUA76_OUTPUT_RMS = 19, // NEW (Output for GUI)
+    GUA76_AUDIO_IN_L = 20,
+    GUA76_AUDIO_IN_R = 21,
+    GUA76_AUDIO_OUT_L = 22,
+    GUA76_AUDIO_OUT_R = 23,
+    GUA76_AUDIO_SIDECHAIN_IN_L = 24,
+    GUA76_AUDIO_SIDECHAIN_IN_R = 25
 } GUA76_PortIndex;
 
-
-// Struct per il nostro stato della GUI
+// Struttura del plugin (Instance)
 typedef struct {
+    float* gain_in_ptr;
+    float* gain_out_ptr;
+    float* input_pad_ptr;
+    float* bypass_ptr;
+    float* normalize_output_ptr;
+    float* ms_mode_active_ptr;
+    float* external_sc_active_ptr;
+    float* attack_ptr;
+    float* release_ptr;
+    float* ratio_ptr;
+    float* input_clip_drive_ptr;
+    float* output_clip_drive_ptr;
+    float* sc_hpf_freq_ptr;
+    float* sc_lpf_freq_ptr;
+    float* sc_hpf_q_ptr; // NEW
+    float* sc_lpf_q_ptr; // NEW
+    float* meter_display_mode_ptr; // NEW
+
+    float* gain_reduction_meter_ptr; // NEW (Output)
+    float* input_rms_ptr;           // NEW (Output)
+    float* output_rms_ptr;          // NEW (Output)
+
+    const float* audio_in_l_ptr;
+    const float* audio_in_r_ptr;
+    float* audio_out_l_ptr;
+    float* audio_out_r_ptr;
+    const float* audio_sidechain_in_l_ptr;
+    const float* audio_sidechain_in_r_ptr;
+
+    double samplerate;
+
     LV2_URID_Map* map;
-    LV2_URID_Unmap* unmap;
-    LV2_Atom_Forge   forge;
-    LV2_UI_Write_Function write_function; // Funzione per scrivere valori al plugin
-    LV2_UI_Controller    controller;
+    LV2_URID      atom_float;
+    LV2_URID      midi_event;
+    LV2_Log_Log* log;
+    LV2_Log_Logger logger;
 
-    // Connessioni X11 per il drawing con Cairo
-    Display* display;
-    Window         window;
-    cairo_surface_t* surface;
-    cairo_t* cr;
-    Atom           atom_delete_window; // Per chiudere la finestra
+    // TODO: Aggiungi qui le variabili di stato per il tuo algoritmo di compressione
+    // es: envelope detector state, gain computer state, filter state, etc.
+    float current_gain_reduction; // Per calcolare e inviare al meter GR
+    float current_input_rms;      // Per calcolare e inviare al meter Input RMS
+    float current_output_rms;     // Per calcolare e inviare al meter Output RMS
 
-    // Valori attuali dei parametri del plugin (cache)
-    float values[14]; // Ci sono 14 parametri di controllo (da 0 a 13)
+    // Smoothing per i parametri (evita click/zip)
+    float smoothed_input_gain;
+    float smoothed_output_gain;
+    float smoothed_attack;
+    float smoothed_release;
+    // ... e così via per tutti i parametri che possono cambiare fluidamente
+    // I parametri a scatti (ratio, attack/release_stepped) non necessitano di smoothing per il loro valore base,
+    // ma la transizione della compressione che ne deriva sì.
 
-    // Per la gestione dei controlli: potresti avere strutture per manopole, pulsanti, ecc.
-    // Ogni controllo avrebbe la sua posizione, dimensione, stato, e l'indice della porta LV2 associata.
-    // Esempio:
-    struct {
-        float x, y, radius;
-        float angle; // Per manopole
-        int port_index;
-        bool is_dragging;
-        double drag_start_y; // Per gestire il drag verticale
-    } knobs[10]; // Esempio: un array di manopole
-    
-    struct {
-        float x, y, width, height;
-        bool is_on;
-        int port_index;
-    } buttons[10]; // Esempio: un array di pulsanti per i toggle e ratio
+    // Variabili per il calcolo RMS
+    float rms_alpha; // Costante di tempo per smoothing RMS
+    float rms_sum_sq_in_l;
+    float rms_sum_sq_in_r;
+    float rms_sum_sq_out_l;
+    float rms_sum_sq_out_r;
 
-    // Variabile per tenere traccia della manopola/pulsante attivo per il drag/click
-    int active_control_idx; // Indice del controllo che l'utente sta interagendo con
-    int active_control_type; // 0=none, 1=knob, 2=button
 
-    // Per il rendering del testo
-    cairo_font_face_t* font_face;
+} Gua76;
 
-} Gua76UI;
-
-// Funzioni di utilità per disegnare (es. una manopola, un pulsante)
-// Questo è dove il tuo talento artistico e le conoscenze di Cairo entrano in gioco.
-
-static void draw_knob(cairo_t* cr, float x, float y, float radius, float value, float min_val, float max_val, const char* label) {
-    cairo_save(cr);
-    cairo_translate(cr, x, y);
-
-    // Disegna lo sfondo della manopola
-    cairo_set_source_rgb(cr, 0.2, 0.2, 0.2); // Grigio scuro
-    cairo_arc(cr, 0, 0, radius, 0, 2 * M_PI);
-    cairo_fill(cr);
-
-    // Disegna il "pizzico" o indicatore
-    cairo_set_source_rgb(cr, 0.8, 0.8, 0.8); // Grigio chiaro
-    float angle = (value - min_val) / (max_val - min_val) * (0.75 * 2 * M_PI) + (0.625 * 2 * M_PI); // Mappa il valore a un angolo
-    cairo_set_line_width(cr, 2);
-    cairo_arc(cr, 0, 0, radius * 0.8, angle - 0.1, angle + 0.1);
-    cairo_line_to(cr, radius * 0.5 * cos(angle), radius * 0.5 * sin(angle));
-    cairo_close_path(cr);
-    cairo_fill(cr);
-    
-    // Disegna il label (sotto la manopola)
-    cairo_set_source_rgb(cr, 0.9, 0.9, 0.9);
-    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-    cairo_set_font_size(cr, 12);
-    cairo_text_extents_t te;
-    cairo_text_extents(cr, label, &te);
-    cairo_move_to(cr, -te.width / 2, radius + te.height + 5);
-    cairo_show_text(cr, label);
-
-    cairo_restore(cr);
-}
-
-static void draw_toggle_button(cairo_t* cr, float x, float y, float w, float h, bool is_on, const char* label) {
-    cairo_save(cr);
-    cairo_translate(cr, x, y);
-
-    // Disegna lo sfondo del pulsante
-    cairo_set_source_rgb(cr, 0.3, 0.3, 0.3); // Grigio scuro
-    cairo_rectangle(cr, 0, 0, w, h);
-    cairo_fill(cr);
-
-    // Disegna il "toggle" o indicatore dello stato
-    if (is_on) {
-        cairo_set_source_rgb(cr, 0.0, 0.8, 0.0); // Verde accesso
-    } else {
-        cairo_set_source_rgb(cr, 0.8, 0.0, 0.0); // Rosso spento
+// Funzione di utilità per il calcolo RMS (molto semplificata per ora)
+static float calculate_rms_level(const float* buffer, uint32_t n_samples, float current_rms, float alpha) {
+    float sum_sq = 0.0f;
+    for (uint32_t i = 0; i < n_samples; ++i) {
+        sum_sq += buffer[i] * buffer[i];
     }
-    cairo_rectangle(cr, w * 0.1, h * 0.1, w * 0.8, h * 0.8);
-    cairo_fill(cr);
+    float block_rms = sqrtf(sum_sq / n_samples);
 
-    // Disegna il label
-    cairo_set_source_rgb(cr, 0.9, 0.9, 0.9);
-    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-    cairo_set_font_size(cr, 10);
-    cairo_text_extents_t te;
-    cairo_text_extents(cr, label, &te);
-    cairo_move_to(cr, (w - te.width) / 2, h + te.height + 5);
-    cairo_show_text(cr, label);
-
-    cairo_restore(cr);
+    // Exponential smoothing per un valore più stabile
+    return (current_rms * (1.0f - alpha)) + (block_rms * alpha);
 }
 
-
-// Funzione di disegno principale della GUI
-static void draw(Gua76UI* ui) {
-    cairo_set_source_rgb(ui->cr, 0.1, 0.1, 0.1); // Colore di sfondo della GUI
-    cairo_paint(ui->cr);
-
-    // Esempio di disegno di una manopola per Input Gain
-    // Indice 0 in values[] corrisponde a GUA76_INPUT_GAIN
-    draw_knob(ui->cr, 50, 50, 30, ui->values[GUA76_INPUT_GAIN], -20.0f, 20.0f, "Input Gain");
-
-    // Esempio di disegno di un pulsante per Bypass
-    // Indice 3 in values[] corrisponde a GUA76_BYPASS
-    draw_toggle_button(ui->cr, 150, 50, 40, 20, ui->values[GUA76_BYPASS] > 0.5f, "Bypass");
-
-    // TODO: Disegna TUTTI gli altri controlli (Output Gain, Pad, Normalize, MS Mode, External SC, Attack, Release, Ratio, Clip Drive, HPF, LPF)
-    // Usando le posizioni e le dimensioni appropriate.
-    // Ricorda di accedere ai valori attuali tramite ui->values[GUA76_PORT_INDEX].
-
-    // Forza il refresh della finestra
-    cairo_surface_flush(ui->surface);
-    XFlush(ui->display);
+// Converti livello lineare a dB
+static float to_db(float linear_val) {
+    if (linear_val <= 0.000000001f) return -90.0f; // Protezione per log(0)
+    return 20.0f * log10f(linear_val);
 }
 
-// Funzione per inviare un valore al plugin core
-static void send_value(Gua76UI* ui, uint32_t port_index, float value) {
-    ui->write_function(ui->controller, port_index, sizeof(float), 0, &value);
-}
-
-// Handler degli eventi X11 (mouse, tastiera)
-static int handle_event(Gua76UI* ui, XEvent* event) {
-    switch (event->type) {
-        case Expose:
-            // Ridisegna l'intera finestra quando è esposta
-            draw(ui);
-            break;
-        case ButtonPress: {
-            // Gestione click del mouse
-            XButtonEvent* bev = (XButtonEvent*)event;
-            // TODO: Controlla quale manopola/pulsante è stato cliccato in base alle coordinate bev->x, bev->y
-            // Se una manopola, imposta ui->active_control_idx e ui->active_control_type = 1
-            // Se un pulsante, imposta ui->active_control_idx e ui->active_control_type = 2
-            // Esempio per il Bypass button:
-            if (bev->x >= 150 && bev->x <= 150+40 && bev->y >= 50 && bev->y <= 50+20) {
-                ui->values[GUA76_BYPASS] = (ui->values[GUA76_BYPASS] > 0.5f) ? 0.0f : 1.0f; // Toggle stato
-                send_value(ui, GUA76_BYPASS, ui->values[GUA76_BYPASS]);
-                draw(ui); // Ridisegna per mostrare il cambio di stato
-            }
-            // Esempio per Input Gain knob (molto semplificato, senza drag)
-            float knob_x = 50, knob_y = 50, knob_r = 30;
-            if (pow(bev->x - knob_x, 2) + pow(bev->y - knob_y, 2) <= pow(knob_r, 2)) {
-                 ui->active_control_idx = GUA76_INPUT_GAIN;
-                 ui->active_control_type = 1; // Knob
-                 ui->knobs[0].is_dragging = true; // Assumi che knobs[0] sia l'input gain
-                 ui->knobs[0].drag_start_y = bev->y;
-            }
-
-            break;
-        }
-        case ButtonRelease: {
-            // Rilascia il controllo attivo
-            // Resetta ui->active_control_idx e ui->active_control_type = 0
-            if (ui->knobs[0].is_dragging) {
-                ui->knobs[0].is_dragging = false;
-            }
-            ui->active_control_idx = -1;
-            ui->active_control_type = 0;
-            break;
-        }
-        case MotionNotify: {
-            // Gestione del movimento del mouse (per i drag delle manopole)
-            XPointerEvent* pev = (XPointerEvent*)event;
-            if (ui->active_control_type == 1 && ui->knobs[0].is_dragging) { // Se stiamo trascinando una manopola (es. input gain)
-                float delta_y = pev->y - ui->knobs[0].drag_start_y;
-                float sensitivity = 0.1f; // Regola la sensibilità del drag
-
-                // Aggiorna il valore in base al movimento verticale
-                // Range per Input Gain è -20 a +20
-                float current_val = ui->values[ui->active_control_idx];
-                float new_val = current_val - (delta_y * sensitivity); // Spostamento Y influisce sul valore
-
-                // Clampa il valore nel range [-20, 20]
-                if (new_val < -20.0f) new_val = -20.0f;
-                if (new_val > 20.0f) new_val = 20.0f;
-                
-                ui->values[ui->active_control_idx] = new_val;
-                send_value(ui, ui->active_control_idx, new_val);
-                
-                ui->knobs[0].drag_start_y = pev->y; // Aggiorna la posizione di partenza
-                draw(ui); // Ridisegna per mostrare il nuovo valore
-            }
-            break;
-        }
-        case ClientMessage:
-            // Gestione della chiusura della finestra
-            if (event->xclient.data.l[0] == ui->atom_delete_window) {
-                return 1; // Indica che la GUI deve chiudersi
-            }
-            break;
-    }
-    return 0; // Indica che la GUI deve rimanere aperta
-}
-
-// Funzione di creazione della GUI
-static LV2_UI_Handle
-instantiate(const LV2_UI_Descriptor* descriptor,
-            const char* plugin_uri,
+// Funzione di allocazione e inizializzazione del plugin
+static LV2_Handle
+instantiate(const LV2_Descriptor* descriptor,
+            double                    samplerate,
             const char* bundle_path,
-            LV2_UI_Write_Function      write_function,
-            LV2_UI_Controller          controller,
-            LV2_UI_Widget* widget,
             const LV2_Feature* const* features) {
+    Gua76* self = (Gua76*)calloc(1, sizeof(Gua76));
+    if (!self) return NULL;
 
-    // Controlla che l'URI del plugin corrisponda
-    if (strcmp(plugin_uri, GUA76_PLUGIN_URI) != 0) {
-        fprintf(stderr, "Gua76UI: Plugin URI mismatch.\n");
-        return NULL;
-    }
-
-    Gua76UI* ui = (Gua76UI*)calloc(1, sizeof(Gua76UI));
-    if (!ui) return NULL;
-
-    ui->write_function = write_function;
-    ui->controller = controller;
+    self->samplerate = samplerate;
 
     // Cerca le feature necessarie
     for (int i = 0; features[i]; ++i) {
-        if (strcmp(features[i]->URI, LV2_URID__map) == 0) {
-            ui->map = (LV2_URID_Map*)features[i]->data;
-        } else if (strcmp(features[i]->URI, LV2_URID__unmap) == 0) {
-            ui->unmap = (LV2_URID_Unmap*)features[i]->data;
+        if (!strcmp(features[i]->URI, LV2_URID__map)) {
+            self->map = (LV2_URID_Map*)features[i]->data;
+        } else if (!strcmp(features[i]->URI, LV2_LOG__log)) {
+            self->log = (LV2_Log_Log*)features[i]->data;
         }
     }
 
-    if (!ui->map) {
-        fprintf(stderr, "Gua76UI: Host does not support urid:map.\n");
-        free(ui);
+    if (!self->map) {
+        fprintf(stderr, "gua76: Host does not support urid:map\n");
+        free(self);
         return NULL;
     }
+    lv2_log_logger_init(&self->logger, self->map, self->log);
 
-    // Inizializza i valori dei parametri ai loro default (o 0)
-    for (int i = 0; i < 14; ++i) { // 14 è il numero di parametri di controllo nel .ttl
-        ui->values[i] = 0.0f; 
-    }
-    // Puoi impostare i default qui o lasciarli 0 e poi aggiornarli via port_event
-    ui->values[GUA76_INPUT_GAIN] = 0.0f;
-    ui->values[GUA76_OUTPUT_GAIN] = 0.0f;
-    ui->values[GUA76_INPUT_PAD_10DB] = 0.0f;
-    ui->values[GUA76_BYPASS] = 0.0f;
-    ui->values[GUA76_NORMALIZE_OUTPUT] = 0.0f;
-    ui->values[GUA76_MS_MODE_ACTIVE] = 1.0f; // Default ON
-    ui->values[GUA76_EXTERNAL_SC_ACTIVE] = 0.0f;
-    ui->values[GUA76_ATTACK] = 0.000020f;
-    ui->values[GUA76_RELEASE] = 0.2f;
-    ui->values[GUA76_RATIO] = 4.0f;
-    ui->values[GUA76_INPUT_CLIP_DRIVE] = 1.0f;
-    ui->values[GUA76_OUTPUT_CLIP_DRIVE] = 1.0f;
-    ui->values[GUA76_SC_HPF_FREQ] = 20.0f;
-    ui->values[GUA76_SC_LPF_FREQ] = 20000.0f;
+    // Mappa gli URI necessari
+    self->atom_float = self->map->map(self->map->handle, LV2_ATOM__Float);
+    self->midi_event = self->map->map(self->map->handle, LV2_MIDI__MidiEvent);
 
+    // Inizializza i valori smoothed ai valori di default
+    self->smoothed_input_gain = 0.0f;
+    self->smoothed_output_gain = 0.0f;
+    self->smoothed_attack = 0.000020f;
+    self->smoothed_release = 0.2f;
 
-    // --- Inizializzazione X11 e Cairo ---
-    ui->display = XOpenDisplay(NULL);
-    if (!ui->display) {
-        fprintf(stderr, "Gua76UI: Cannot open X display.\n");
-        free(ui);
-        return NULL;
-    }
+    self->current_gain_reduction = 0.0f;
+    self->current_input_rms = -60.0f; // Default basso
+    self->current_output_rms = -60.0f; // Default basso
 
-    int screen = DefaultScreen(ui->display);
-    Window root_window = RootWindow(ui->display, screen);
+    // RMS smoothing constant (adjust as needed for meter responsiveness)
+    self->rms_alpha = 1.0f - expf(-1.0f / (self->samplerate * 0.05f)); // 50ms time constant for meter
 
-    // Creare la finestra (dimensioni fisse per ora)
-    int width = 400; // Esempio
-    int height = 300; // Esempio
-    ui->window = XCreateSimpleWindow(
-        ui->display, root_window,
-        0, 0, width, height,
-        0, BlackPixel(ui->display, screen), WhitePixel(ui->display, screen)
-    );
-
-    // Selezione degli eventi che vogliamo ricevere
-    XSelectInput(ui->display, ui->window,
-                 ExposureMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask);
-
-    // Gestione della chiusura della finestra con il tasto X
-    ui->atom_delete_window = XInternAtom(ui->display, "WM_DELETE_WINDOW", False);
-    XSetWMProtocols(ui->display, ui->window, &ui->atom_delete_window, 1);
-
-    XMapWindow(ui->display, ui->window); // Mostra la finestra
-
-    // Inizializza Cairo
-    ui->surface = cairo_xlib_surface_create(ui->display, ui->window,
-                                            DefaultVisual(ui->display, screen), width, height);
-    ui->cr = cairo_create(ui->surface);
-
-    // Associa il widget LV2 con la nostra finestra X11
-    *widget = (LV2_UI_Widget)ui->window;
-
-    ui->active_control_idx = -1; // Nessun controllo attivo inizialmente
-    ui->active_control_type = 0;
-
-    return (LV2_UI_Handle)ui;
+    return (LV2_Handle)self;
 }
 
-// Funzione per gestire gli eventi del plugin (aggiornamenti dei parametri dal core)
+// Funzione per collegare le porte
 static void
-port_event(LV2_UI_Handle handle,
-           uint32_t      port_index,
-           uint32_t      buffer_size,
-           uint32_t      format,
-           const void* buffer) {
+connect_port(LV2_Handle instance, uint32_t port, void* data_location) {
+    Gua76* self = (Gua76*)instance;
 
-    Gua76UI* ui = (Gua76UI*)handle;
-
-    // Assicurati che sia un valore float e che l'indice sia valido
-    if (format == ui->map->map(ui->map->handle, LV2_ATOM_URI "#Float") &&
-        port_index < sizeof(ui->values) / sizeof(ui->values[0])) {
-        ui->values[port_index] = *(const float*)buffer;
-        draw(ui); // Ridisegna la GUI per riflettere il nuovo valore
+    switch ((GUA76_PortIndex)port) {
+        case GUA76_INPUT_GAIN:               self->gain_in_ptr = (float*)data_location; break;
+        case GUA76_OUTPUT_GAIN:              self->gain_out_ptr = (float*)data_location; break;
+        case GUA76_INPUT_PAD_10DB:           self->input_pad_ptr = (float*)data_location; break;
+        case GUA76_BYPASS:                   self->bypass_ptr = (float*)data_location; break;
+        case GUA76_NORMALIZE_OUTPUT:         self->normalize_output_ptr = (float*)data_location; break;
+        case GUA76_MS_MODE_ACTIVE:           self->ms_mode_active_ptr = (float*)data_location; break;
+        case GUA76_EXTERNAL_SC_ACTIVE:       self->external_sc_active_ptr = (float*)data_location; break;
+        case GUA76_ATTACK:                   self->attack_ptr = (float*)data_location; break;
+        case GUA76_RELEASE:                  self->release_ptr = (float*)data_location; break;
+        case GUA76_RATIO:                    self->ratio_ptr = (float*)data_location; break;
+        case GUA76_INPUT_CLIP_DRIVE:         self->input_clip_drive_ptr = (float*)data_location; break;
+        case GUA76_OUTPUT_CLIP_DRIVE:        self->output_clip_drive_ptr = (float*)data_location; break;
+        case GUA76_SC_HPF_FREQ:              self->sc_hpf_freq_ptr = (float*)data_location; break;
+        case GUA76_SC_LPF_FREQ:              self->sc_lpf_freq_ptr = (float*)data_location; break;
+        case GUA76_SC_HPF_Q:                 self->sc_hpf_q_ptr = (float*)data_location; break; // NEW
+        case GUA76_SC_LPF_Q:                 self->sc_lpf_q_ptr = (float*)data_location; break; // NEW
+        case GUA76_METER_DISPLAY_MODE:       self->meter_display_mode_ptr = (float*)data_location; break; // NEW
+        case GUA76_GAIN_REDUCTION_METER:     self->gain_reduction_meter_ptr = (float*)data_location; break; // NEW (Output)
+        case GUA76_INPUT_RMS:                self->input_rms_ptr = (float*)data_location; break; // NEW (Output)
+        case GUA76_OUTPUT_RMS:               self->output_rms_ptr = (float*)data_location; break; // NEW (Output)
+        case GUA76_AUDIO_IN_L:               self->audio_in_l_ptr = (const float*)data_location; break;
+        case GUA76_AUDIO_IN_R:               self->audio_in_r_ptr = (const float*)data_location; break;
+        case GUA76_AUDIO_OUT_L:              self->audio_out_l_ptr = (float*)data_location; break;
+        case GUA76_AUDIO_OUT_R:              self->audio_out_r_ptr = (float*)data_location; break;
+        case GUA76_AUDIO_SIDECHAIN_IN_L:     self->audio_sidechain_in_l_ptr = (const float*)data_location; break;
+        case GUA76_AUDIO_SIDECHAIN_IN_R:     self->audio_sidechain_in_r_ptr = (const float*)data_location; break;
     }
 }
 
-// Funzione per il ciclo di esecuzione della GUI (se non c'è un main loop X11)
-static int
-ui_idle(LV2_UI_Handle handle) {
-    Gua76UI* ui = (Gua76UI*)handle;
-    XEvent event;
-
-    // Processa tutti gli eventi X11 in coda
-    while (XPending(ui->display)) {
-        XNextEvent(ui->display, &event);
-        if (handle_event(ui, &event)) {
-            return 1; // Chiede la chiusura della GUI
-        }
-    }
-    return 0; // La GUI deve rimanere aperta
-}
-
-// Funzione di pulizia della GUI
+// Funzione di ripristino (Reset)
 static void
-cleanup(LV2_UI_Handle handle) {
-    Gua76UI* ui = (Gua76UI*)handle;
+activate(LV2_Handle instance) {
+    Gua76* self = (Gua76*)instance;
 
-    cairo_destroy(ui->cr);
-    cairo_surface_destroy(ui->surface);
-    XDestroyWindow(ui->display, ui->window);
-    XCloseDisplay(ui->display);
-    free(ui);
+    // Resetta lo stato interno del compressore, detector, filtri, etc.
+    // Inizializza i valori smoothed ai valori attuali all'attivazione
+    self->smoothed_input_gain = *self->gain_in_ptr;
+    self->smoothed_output_gain = *self->gain_out_ptr;
+    self->smoothed_attack = *self->attack_ptr;
+    self->smoothed_release = *self->release_ptr;
+
+    self->current_gain_reduction = 0.0f;
+    self->current_input_rms = -60.0f;
+    self->current_output_rms = -60.0f;
+
+    self->rms_sum_sq_in_l = 0.0f;
+    self->rms_sum_sq_in_r = 0.0f;
+    self->rms_sum_sq_out_l = 0.0f;
+    self->rms_sum_sq_out_r = 0.0f;
 }
 
-// Descrizione della GUI per LV2
-static const LV2_UI_Descriptor ui_descriptor = {
-    GUA76_GUI_URI,
+// Funzione principale di elaborazione del segnale
+static void
+run(LV2_Handle instance, uint32_t sample_count) {
+    Gua76* self = (Gua76*)instance;
+
+    // Puntatori ai buffer audio
+    const float* in_l = self->audio_in_l_ptr;
+    const float* in_r = self->audio_in_r_ptr;
+    float* out_l = self->audio_out_l_ptr;
+    float* out_r = self->audio_out_r_ptr;
+
+    // Puntatori ai parametri di controllo (letti dal host)
+    const float input_gain = *self->gain_in_ptr;
+    const float output_gain = *self->gain_out_ptr;
+    const float input_pad_10db = *self->input_pad_10db_ptr;
+    const float bypass = *self->bypass_ptr;
+    const float normalize_output = *self->normalize_output_ptr;
+    const float ms_mode_active = *self->ms_mode_active_ptr;
+    const float external_sc_active = *self->external_sc_active_ptr;
+    const float attack = *self->attack_ptr;
+    const float release = *self->release_ptr;
+    const float ratio = *self->ratio_ptr;
+    const float input_clip_drive = *self->input_clip_drive_ptr;
+    const float output_clip_drive = *self->output_clip_drive_ptr;
+    const float sc_hpf_freq = *self->sc_hpf_freq_ptr;
+    const float sc_lpf_freq = *self->sc_lpf_freq_ptr;
+    const float sc_hpf_q = *self->sc_hpf_q_ptr; // NEW
+    const float sc_lpf_q = *self->sc_lpf_q_ptr; // NEW
+    const float meter_display_mode = *self->meter_display_mode_ptr; // NEW
+
+    // --- Smoothing dei parametri ---
+    // Questi valori interpolati vengono usati nell'elaborazione per evitare artefatti
+    const float k_smooth = 0.01f; // Valore di smoothing (da regolare)
+    self->smoothed_input_gain = (1.0f - k_smooth) * self->smoothed_input_gain + k_smooth * input_gain;
+    self->smoothed_output_gain = (1.0f - k_smooth) * self->smoothed_output_gain + k_smooth * output_gain;
+    self->smoothed_attack = (1.0f - k_smooth) * self->smoothed_attack + k_smooth * attack;
+    self->smoothed_release = (1.0f - k_smooth) * self->smoothed_release + k_smooth * release;
+    // Applica smoothing anche agli altri parametri che lo richiedono (es. drive, filtri)
+
+    // --- Implementazione del bypass ---
+    if (bypass > 0.5f) { // Se il bypass è attivo
+        if (in_l != out_l) { memcpy(out_l, in_l, sizeof(float) * sample_count); }
+        if (in_r != out_r) { memcpy(out_r, in_r, sizeof(float) * sample_count); }
+
+        // Manda valori di meter azzerati o di passthrough quando in bypass
+        *self->gain_reduction_meter_ptr = 0.0f;
+        *self->input_rms_ptr = to_db(calculate_rms_level(in_l, sample_count, self->current_input_rms, self->rms_alpha));
+        *self->output_rms_ptr = to_db(calculate_rms_level(out_l, sample_count, self->current_output_rms, self->rms_alpha));
+        self->current_input_rms = *self->input_rms_ptr;
+        self->current_output_rms = *self->output_rms_ptr;
+        return;
+    }
+
+    // --- Implementazione del pad in ingresso ---
+    float pad_factor = (input_pad_10db > 0.5f) ? powf(10.0f, -10.0f / 20.0f) : 1.0f;
+
+    // --- Ciclo di elaborazione per i campioni audio ---
+    for (uint32_t i = 0; i < sample_count; ++i) {
+        float in_l_sample = in_l[i] * pad_factor;
+        float in_r_sample = in_r[i] * pad_factor;
+
+        // TODO: Qui va la logica COMPLESSA del compressore 1176:
+        // 1. Applica Input Gain (smoothed_input_gain)
+        // 2. Calcola il livello RMS per il sidechain (anche con i filtri HPF/LPF/Q)
+        //    (se external_sc_active, usa i sidechain_in_L/R)
+        // 3. Applica la compressione basata su Attack, Release, Ratio.
+        //    Questo è il nucleo dell'algoritmo (detector, gain computer)
+        // 4. Applica M/S mode se attivo (converti a M/S, processa, riconverti)
+        // 5. Applica Input/Output Clip Drive
+        // 6. Applica Output Gain (smoothed_output_gain)
+        // 7. Applica Normalize Output se attivo (calcola il picco finale e scala)
+
+        // Esempio molto semplice di passthrough con gain (da sostituire)
+        float processed_l = in_l_sample * powf(10.0f, self->smoothed_input_gain / 20.0f);
+        float processed_r = in_r_sample * powf(10.0f, self->smoothed_input_gain / 20.0f);
+
+        // TODO: Calcola la gain reduction corrente per questo sample
+        // self->current_gain_reduction = ... (da derivare dalla logica del compressore)
+
+        processed_l *= powf(10.0f, self->smoothed_output_gain / 20.0f);
+        processed_r *= powf(10.0f, self->smoothed_output_gain / 20.0f);
+
+
+        // Scrivi l'output
+        out_l[i] = processed_l;
+        out_r[i] = processed_r;
+    }
+
+    // --- Aggiornamento dei valori dei meter per la GUI (a fine blocco) ---
+    // La gain reduction è un valore che deve essere calcolato all'interno del tuo algoritmo di compressione.
+    // Per ora, useremo un valore placeholder.
+    // *self->gain_reduction_meter_ptr = self->current_gain_reduction; // Questo verrà aggiornato dalla logica
+    *self->gain_reduction_meter_ptr = -fabsf(sinf( (float)glfwGetTime() / 2.0f ) * 15.0f); // Placeholder animato per test
+
+    // Calcolo RMS per input e output per la GUI
+    self->current_input_rms = to_db(calculate_rms_level(in_l, sample_count, self->current_input_rms, self->rms_alpha));
+    self->current_output_rms = to_db(calculate_rms_level(out_l, sample_count, self->current_output_rms, self->rms_alpha));
+
+    *self->input_rms_ptr = self->current_input_rms;
+    *self->output_rms_ptr = self->current_output_rms;
+
+    // Nota: Il meter_display_mode_ptr è letto solo dalla GUI, non dal core qui.
+    // Ma se il tuo core dovesse reagire a questa impostazione, lo farebbe qui.
+}
+
+// Funzione di pulizia (deallocazione memoria)
+static void
+cleanup(LV2_Handle instance) {
+    free(instance);
+}
+
+// Funzione per restituire le descrizioni del plugin
+static const LV2_Extension_Data*
+extension_data(const char* uri) {
+    return NULL;
+}
+
+static const LV2_Descriptor descriptor = {
+    GUA76_URI,
     instantiate,
+    connect_port,
+    activate,
+    run,
+    deactivate, // Manca la funzione deactivate nel codice, ma è nella struct. Aggiungiamo una dummy.
     cleanup,
-    port_event,
-    ui_idle, // O ui_idle, a seconda del ciclo di eventi preferito
-    NULL // no extension_data
+    extension_data
 };
 
+// Funzione dummy per deactivate (potrebbe non essere necessaria per tutti i plugin)
+static void deactivate(LV2_Handle instance) {
+    // Non fa nulla per ora. Potresti voler salvare stato, resettare buffer, etc.
+}
+
+
 LV2_SYMBOL_EXPORT
-const LV2_UI_Descriptor*
-lv2_ui_descriptor(uint32_t index) {
+const LV2_Descriptor* lv2_descriptor(uint32_t index) {
     if (index == 0) {
-        return &ui_descriptor;
+        return &descriptor;
     }
     return NULL;
 }
