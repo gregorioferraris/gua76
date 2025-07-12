@@ -11,23 +11,26 @@
 # Il bundle del tuo plugin (la cartella .lv2)
 <http://your-plugin.com/plugins/gua76.lv2>
     a lv2:PluginBundle ;
-    lv2:binary <gua76.so> ;
-    rdfs:seeAlso <gua76.ttl> . # Questo è il file gua76.ttl, che è il plugin stesso
+    lv2:binary <gua76.so> ; # Il binario del plugin audio
+    rdfs:seeAlso <gua76.ttl> . # Questo è il file gua76.ttl, che è il plugin stesso (l'URI del plugin dentro il bundle)
 
-# Il manifest della GUI
+# Il manifest della GUI X11 (Nuova Sezione)
 <http://your-plugin.com/plugins/gua76.lv2/gui>
     a ui:X11UI ;
-    ui:binary <gua76_gui.so> ; # Il binario della GUI
+    ui:binary <gua76_gui.so> ; # Il binario della GUI (dovrà essere creato)
     lv2:requiredFeature urid:map , log:log , ui:parent , ui:X11Display ;
     lv2:optionalFeature ui:idleInterface ;
     lv2:extensionData ui:idleInterface ; # Necessario per il refresh continuo della UI
     rdfs:label "Gua76 UI" .
 
-# Il plugin audio Gua76 (definito in gua76.ttl)
+# Il plugin audio Gua76 (definito nel file gua76.ttl all'interno del bundle)
+# NOTA: Per convenzione, il file TTL principale del plugin audio all'interno del bundle
+# è spesso chiamato con lo stesso nome del bundle (es. gua76.ttl in gua76.lv2).
+# L'URI del plugin è definito in gua76.h.
 <gua76.ttl>
     a lv2:Plugin ;
     lv2:binary <gua76.so> ; # Il file binario del tuo plugin audio
-    rdfs:seeAlso <http://your-plugin.com/plugins/gua76.lv2> ;
+    rdfs:seeAlso <http://your-plugin.com/plugins/gua76.lv2> ; # Riferimento al bundle
     lv2:requiredFeature urid:map , urid:unmap ;
     lv2:optionalFeature log:log ;
 
@@ -39,6 +42,7 @@
     ] ;
     doap:license <http://opensource.org/licenses/ISC> ; # Esempio di licenza
 
+    # --- Porte Audio ---
     lv2:port [
         a lv2:AudioPort , lv2:InputPort ;
         lv2:index 0 ;
@@ -73,7 +77,10 @@
         lv2:name "Sidechain Input R" ;
         lv2:optionalFeature lv2:connectionOptional ; # Rende la connessione opzionale
         rdfs:comment "External sidechain input for right channel."
-    ] , [
+    ] ,
+
+    # --- Porte di Controllo (Input) ---
+    [
         a lv2:ControlPort , lv2:InputPort ;
         lv2:index 6 ;
         lv2:symbol "input" ;
@@ -154,7 +161,7 @@
         lv2:index 13 ;
         lv2:symbol "drive_saturation" ;
         lv2:name "Drive / Saturation" ;
-        lv2:default 0.5 ;
+        lv2:default 0.0 ; # Inizialmente spento
         lv2:minimum 0.0 ;
         lv2:maximum 1.0 ;
         rdfs:comment "Adds additional drive and saturation characteristics."
@@ -163,7 +170,7 @@
         lv2:index 14 ;
         lv2:symbol "oversampling" ;
         lv2:name "Oversampling" ;
-        lv2:default 1 ;
+        lv2:default 1 ; # Di default attivo per qualità
         lv2:minimum 0 ;
         lv2:maximum 1 ;
         lv2:portProperty lv2:toggled ;
@@ -257,7 +264,10 @@
         lv2:maximum 1 ;
         lv2:portProperty lv2:toggled ;
         rdfs:comment "Applies a -10dB pad to the input signal."
-    ] , [
+    ] ,
+
+    # --- Porte di Controllo (Output per la GUI / Metering) ---
+    [
         a lv2:ControlPort , lv2:OutputPort ;
         lv2:index 24 ;
         lv2:symbol "peak_gr" ;
